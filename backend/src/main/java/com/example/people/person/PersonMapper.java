@@ -6,13 +6,11 @@ import org.springframework.stereotype.Component;
 public class PersonMapper {
     public Person createEntity(PersonRequest request) {
         Person person = new Person();
-        person.setFirstName(request.firstName());
-        person.setLastName(request.lastName());
-        person.setEmail(request.email());
-        person.setDateOfBirth(request.dateOfBirth());
+        updateEntity(person, request);
         return person;
     }
 
+    /** The single place that copies the four business fields from a request; used by both create and update. */
     public void updateEntity(Person person, PersonRequest request) {
         person.setFirstName(request.firstName());
         person.setLastName(request.lastName());
