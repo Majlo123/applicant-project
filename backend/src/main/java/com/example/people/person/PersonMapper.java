@@ -16,6 +16,7 @@ public class PersonMapper {
     public void updateEntity(Person person, PersonRequest request) {
         person.setFirstName(request.firstName());
         person.setLastName(request.lastName());
+        person.setEmail(request.email());
         person.setDateOfBirth(request.dateOfBirth());
     }
 

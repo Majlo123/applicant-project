@@ -28,12 +28,8 @@ public class PersonService {
         return mapper.toResponse(repository.save(mapper.createEntity(request)));
     }
 
-    public PersonResponse update(long id, PersonRequest request) {
-        return this.applyChanges(id, request);
-    }
-
     @Transactional
-    public PersonResponse applyChanges(long id, PersonRequest request) {
+    public PersonResponse update(long id, PersonRequest request) {
         Person person = find(id);
         mapper.updateEntity(person, request);
         return mapper.toResponse(person);
