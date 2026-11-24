@@ -1,0 +1,8 @@
+.npmrc
+node_modules/
+.next/
+.env*
+!.env.example
+*.tsbuildinfo
+backend/target/
+.logs/
