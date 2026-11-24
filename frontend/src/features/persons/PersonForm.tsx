@@ -5,22 +5,31 @@ import { useRouter } from 'next/navigation';
 import { ApiError } from '@/lib/apiClient';
 import { personApi, type FieldErrors, type PersonInput } from '@/lib/personApi';
 import { emptyPerson, normalizePerson, validatePerson } from './personValidation';
+import { rememberSaved } from './savedNotice';
 import { usePerson } from './usePerson';
 
 type FieldsProps = { value: PersonInput; errors: FieldErrors; busy: boolean; onChange: (value: PersonInput) => void };
 function Fields({ value, errors, busy, onChange }: FieldsProps) {
+  // No maxLength: the browser would silently cut pasted text; length is checked (in characters) on save instead.
+  // The email field is plain text so the browser keeps the spelling (type="email" converts international domains).
   return <fieldset disabled={busy}><div className="form-grid">{([
-    ['firstName', 'First name', 'text', 'given-name'], ['lastName', 'Last name', 'text', 'family-name'],
-    ['email', 'Email address', 'email', 'email'], ['dateOfBirth', 'Date of birth', 'date', 'bday'],
-  ] as const).map(([key, label, type, autoComplete]) => <div className={`field ${key === 'email' ? 'wide' : ''}`} key={key}>
+    ['firstName', 'First name', 'text', 'given-name', undefined], ['lastName', 'Last name', 'text', 'family-name', undefined],
+    ['email', 'Email address', 'text', 'email', 'email'], ['dateOfBirth', 'Date of birth', 'date', 'bday', undefined],
+  ] as const).map(([key, label, type, autoComplete, inputMode]) => <div className={`field ${key === 'email' ? 'wide' : ''}`} key={key}>
     <label htmlFor={key}>{label} <span aria-hidden="true">*</span></label>
-    <input id={key} name={key} type={type} value={value[key]} autoComplete={autoComplete} required
-      maxLength={key === 'email' ? 254 : key === 'dateOfBirth' ? undefined : 100}
+    <input id={key} name={key} type={type} inputMode={inputMode} value={value[key]} autoComplete={autoComplete} required
+      spellCheck={key === 'email' ? false : undefined}
       aria-invalid={!!errors[key]} aria-describedby={errors[key] ? `${key}-error` : key === 'dateOfBirth' ? 'date-hint' : undefined}
       onChange={event => onChange({ ...value, [key]: event.target.value })} />
     {errors[key] && <p className="field-error" id={`${key}-error`}>{errors[key]}</p>}
     {key === 'dateOfBirth' && <p className="hint" id="date-hint">Use a calendar date, up to and including today.</p>}
   </div>)}</div></fieldset>;
+}
+
+/** True when the browser's date field contains a partial or impossible date (its value is then empty). */
+function dateUnreadable(event: FormEvent<HTMLFormElement>) {
+  const input = event.currentTarget.elements.namedItem('dateOfBirth');
+  return input instanceof HTMLInputElement && input.validity.badInput;
 }
 
 export function CreatePersonForm() {
@@ -29,16 +38,17 @@ export function CreatePersonForm() {
   const [errors, setErrors] = useState<FieldErrors>({});
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
-  async function submit(event: FormEvent) {
+  async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (busy) return;
-    const validation = validatePerson(value);
+    const validation = validatePerson(value, undefined, dateUnreadable(event));
     setErrors(validation); setError('');
     if (Object.keys(validation).length) { setError('Please check the entered values.'); return; }
     setBusy(true);
     try {
       const person = await personApi.create(normalizePerson(value));
-      router.push(`/persons/${person.id}?saved=created`);
+      rememberSaved(person.id, 'created');
+      router.push(`/persons/${person.id}`);
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : 'Unable to save. Please try again.');
       if (reason instanceof ApiError) setErrors(reason.fieldErrors);
@@ -48,9 +58,9 @@ export function CreatePersonForm() {
 }
 
 export function EditPersonForm({ id }: { id: string }) {
-  const { person, loading, error, retry } = usePerson(id);
+  const { person, loading, error, retryable, retry } = usePerson(id);
   if (loading) return <div className="panel loading" role="status">Loading person…</div>;
-  if (error || !person) return <div className="panel"><p role="alert">{error || 'Person not found.'}</p><button onClick={retry}>Try again</button> <Link href="/persons">Back to people</Link></div>;
+  if (error || !person) return <div className="panel"><p role="alert">{error || 'Person not found.'}</p>{retryable && <button onClick={retry}>Try again</button>} <Link href="/persons">Back to people</Link></div>;
   return <EditLoaded key={person.id} id={id} initial={person} />;
 }
 
@@ -60,16 +70,17 @@ function EditLoaded({ id, initial }: { id: string; initial: PersonInput }) {
   const [errors, setErrors] = useState<FieldErrors>({});
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
-  async function submit(event: FormEvent) {
+  async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (busy) return;
-    const validation = validatePerson(value);
+    const validation = validatePerson(value, undefined, dateUnreadable(event));
     setErrors(validation); setError('');
     if (Object.keys(validation).length) { setError('Please check the entered values.'); return; }
     setBusy(true);
     try {
       const person = await personApi.update(id, normalizePerson(value));
-      router.push(`/persons/${person.id}?saved=updated`);
+      rememberSaved(person.id, 'updated');
+      router.push(`/persons/${person.id}`);
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : 'Unable to save. Please try again.');
       if (reason instanceof ApiError) setErrors(reason.fieldErrors);
@@ -78,7 +89,7 @@ function EditLoaded({ id, initial }: { id: string; initial: PersonInput }) {
   return <FormShell title="Edit person" subtitle="Update the information for this person." cancel={`/persons/${id}`} value={value} onChange={setValue} errors={errors} error={error} busy={busy} onSubmit={submit} />;
 }
 
-function FormShell(props: FieldsProps & { title: string; subtitle: string; cancel: string; error: string; onSubmit: (event: FormEvent) => void }) {
+function FormShell(props: FieldsProps & { title: string; subtitle: string; cancel: string; error: string; onSubmit: (event: FormEvent<HTMLFormElement>) => void }) {
   return <div className="narrow"><Link className="back" href="/persons">← All people</Link><div className="page-heading"><p className="eyebrow">PERSON RECORD</p><h1>{props.title}</h1><p>{props.subtitle}</p></div>
     <form className="panel form-panel" noValidate onSubmit={props.onSubmit} aria-busy={props.busy}><div className="panel-heading"><h2>Personal information</h2><p>All fields are required.</p></div>
       {props.error && <div className="notice error" role="alert">{props.error}</div>}<Fields {...props} />
